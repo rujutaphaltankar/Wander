@@ -1,0 +1,193 @@
+// Wander — Prisma schema (SQLite edition)
+// SQLite is a single file on disk — no server, no Docker, no separate install required.
+// Run `npm run prisma:migrate` to create tables, `npm run prisma:seed` to load sample data.
+//
+// Note: SQLite doesn't support native enums or arrays like PostgreSQL does, so a few
+// fields that would otherwise be enums (role, type, travelMode...) are plain strings
+// validated by Zod at the API layer instead, and `interests` is stored as a JSON string.
+// If you ever move this to PostgreSQL/MySQL, those can become real enums/arrays again.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String?
+  name          String
+  avatarUrl     String?
+  role          String   @default("USER") // "USER" | "ADMIN"
+  provider      String   @default("password") // password | google | apple
+  providerId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  trips         Trip[]
+  favorites     Favorite[]
+  reviews       Review[]
+  budgets       Budget[]
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model City {
+  id          String  @id @default(uuid())
+  name        String
+  country     String
+  latitude    Float
+  longitude   Float
+  description String?
+  imageUrl    String?
+
+  places      Place[]
+  trips       Trip[]
+
+  @@unique([name, country])
+}
+
+model Place {
+  id             String     @id @default(uuid())
+  cityId         String
+  city           City       @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  type           String     // "ATTRACTION" | "RESTAURANT"
+  name           String
+  category       String     // e.g. "Historical", "Street food", "Nightlife"
+  description    String?
+  address        String?
+  latitude        Float?
+  longitude       Float?
+  priceLevel     Int?       // 1-5, used for the budget-based food finder
+  avgCostInr     Int?       // average cost per person in INR
+  rating         Float      @default(0)
+  ratingCount    Int        @default(0)
+  entryFeeInr    Int?       // attractions only
+  openingHours   String?
+  visitDuration  String?    // e.g. "1.5 hr"
+  crowdLevel     String?    // Low | Medium | High
+  cuisine        String?    // restaurants only
+  isVegFriendly  Boolean    @default(false)
+  imageUrl       String?
+  tag            String?    // "Must visit" | "Hidden gem" | "Popular"
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  favorites      Favorite[]
+  reviews        Review[]
+  activities     ItineraryActivity[]
+
+  @@index([cityId, type])
+  @@index([cityId, category])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placeId   String
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  isApproved Boolean @default(true) // admin moderation flag
+  createdAt DateTime @default(now())
+
+  @@index([placeId])
+  @@index([userId])
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placeId   String
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, placeId])
+}
+
+model Trip {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cityId       String
+  city         City       @relation(fields: [cityId], references: [id])
+  title        String
+  days         Int
+  people       Int
+  budgetInr    Int
+  hotelName    String?
+  travelMode   String     @default("WALK") // WALK | BIKE | TRANSIT | CAR
+  foodPref     String?
+  interests    String     @default("[]") // JSON-encoded string[] — see utils/json.ts
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  itineraryDays ItineraryDay[]
+  budget        Budget?
+
+  @@index([userId])
+}
+
+model ItineraryDay {
+  id         String   @id @default(uuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dayNumber  Int
+
+  activities ItineraryActivity[]
+
+  @@unique([tripId, dayNumber])
+}
+
+model ItineraryActivity {
+  id             String   @id @default(uuid())
+  dayId          String
+  day            ItineraryDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  placeId        String?
+  place          Place?   @relation(fields: [placeId], references: [id])
+  order          Int
+  time           String
+  title          String
+  type           String   // FOOD | ATTRACTION | TRANSPORT | SHOPPING | REST | HOTEL
+  durationLabel  String?
+  costInr        Int      @default(0)
+  note           String?
+
+  @@index([dayId])
+}
+
+model Budget {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId         String?  @unique
+  trip           Trip?    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  totalInr       Int
+  spentFoodInr     Int    @default(0)
+  spentTransportInr Int   @default(0)
+  spentTicketsInr  Int    @default(0)
+  spentShoppingInr Int    @default(0)
+  spentHotelInr    Int    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+}

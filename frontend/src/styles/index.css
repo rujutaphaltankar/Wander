@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  font-family: "Inter", sans-serif;
+}
+
+.font-display {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  @apply bg-white dark:bg-[#122029] border border-line dark:border-[#22333A] rounded-2xl shadow-sm;
+}
+
+.chip {
+  @apply border border-line dark:border-[#22333A] bg-white dark:bg-[#122029] text-muted rounded-full px-3.5 py-1.5 text-xs transition-colors;
+}
+
+.chip[data-active="true"] {
+  @apply bg-ink text-white border-ink dark:bg-green dark:text-[#08150F] dark:border-green;
+}
+
+.btn-primary {
+  @apply bg-ink text-white dark:bg-green dark:text-[#08150F] rounded-2xl py-3 font-semibold text-sm transition-transform active:scale-[0.98];
+}
+
+.route-line {
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, #e3e9e6 0 6px, transparent 6px 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

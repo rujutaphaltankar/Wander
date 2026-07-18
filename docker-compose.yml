@@ -1,0 +1,37 @@
+version: "3.9"
+
+# This file is entirely OPTIONAL. Wander uses SQLite, so you do not need Docker
+# or a database server to run the app locally — see the root README for the
+# plain `npm install && npm run dev` path. Use this only if you specifically
+# want containers (e.g. to test a production-like build, or to deploy).
+#
+# The SQLite database file lives inside the backend container at
+# /app/prisma/dev.db and is persisted via the `wander_data` volume below.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: file:./dev.db
+    ports:
+      - "4000:4000"
+    volumes:
+      - wander_data:/app/prisma
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/server.js"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  wander_data:
