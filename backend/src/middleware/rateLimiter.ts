@@ -3,7 +3,7 @@ import { env } from "../config/env";
 
 export const apiLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
-  max: env.rateLimitMax,
+  max: env.nodeEnv === "production" ? env.rateLimitMax : 999999,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: "Too many requests. Please slow down and try again shortly." },
@@ -12,8 +12,9 @@ export const apiLimiter = rateLimit({
 // Tighter limit on auth routes to slow down credential-stuffing attempts.
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: env.nodeEnv === "production" ? 20 : 999999,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: "Too many attempts. Please wait a few minutes and try again." },
 });
+

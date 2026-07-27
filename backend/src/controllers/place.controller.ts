@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/db";
 import { NotFoundError } from "../utils/AppError";
+import { ensureCityExists } from "../services/cityPopulator.service";
 
 // GET /api/places?city=Pune&type=RESTAURANT&category=Street+food&maxPrice=500&veg=true
 //
@@ -13,7 +14,14 @@ export async function listPlaces(req: Request, res: Response) {
   const { city, type, category, maxPrice, veg, q } = req.query as Record<string, string | undefined>;
 
   const where: Prisma.PlaceWhereInput = {};
-  if (city) where.city = { name: { equals: city } };
+  if (city) {
+    const populatedCity = await ensureCityExists(city);
+    if (populatedCity) {
+      where.cityId = populatedCity.id;
+    } else {
+      where.city = { name: { equals: city } };
+    }
+  }
   if (type && (type === "ATTRACTION" || type === "RESTAURANT")) where.type = type;
   if (category) where.category = { equals: category };
   if (maxPrice) where.avgCostInr = { lte: Number(maxPrice) };
@@ -28,6 +36,7 @@ export async function listPlaces(req: Request, res: Response) {
 
   res.json({ success: true, count: places.length, places });
 }
+
 
 export async function getPlace(req: Request, res: Response) {
   const place = await prisma.place.findUnique({

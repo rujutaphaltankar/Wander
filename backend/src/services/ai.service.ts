@@ -114,3 +114,180 @@ Question: "${message}"`;
   const raw = env.aiProvider === "openai" ? await callOpenAI(prompt) : await callAnthropic(prompt);
   return raw.trim();
 }
+
+export interface GeneratedPlace {
+  name: string;
+  type: "ATTRACTION" | "RESTAURANT";
+  category: string;
+  description: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  priceLevel: number;
+  avgCostInr: number;
+  entryFeeInr: number | null;
+  openingHours: string;
+  visitDuration: string;
+  crowdLevel: "Low" | "Medium" | "High";
+  cuisine: string | null;
+  isVegFriendly: boolean;
+}
+
+export interface GeneratedCity {
+  name: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  description: string;
+  places: GeneratedPlace[];
+}
+
+function buildCityPrompt(cityName: string): string {
+  return `You are a travel database assistant.
+Generate structured information for the city "${cityName}".
+Provide the official name of the city, the country name, the city center's latitude and longitude, a short description (under 40 words), and:
+1. A list of 6 top attractions (landmarks, museums, parks, historical sites).
+2. A list of 6 top restaurants/food places, specifically including local street food spots, cafes, and popular local diners.
+
+Respond with ONLY minified JSON, no markdown fences, no commentary, matching exactly this structure:
+{"name":"City Name","country":"Country Name","latitude":48.8566,"longitude":2.3522,"description":"Short description of the city","places":[{"name":"Place Name","type":"ATTRACTION","category":"Historical","description":"Description under 15 words","address":"Area name","latitude":48.8584,"longitude":2.2945,"priceLevel":2,"avgCostInr":300,"entryFeeInr":1200,"openingHours":"9:00 AM - 6:00 PM","visitDuration":"2 hr","crowdLevel":"Medium","cuisine":null,"isVegFriendly":true}]}
+
+Use real, plausible coordinates and prices. Convert entry fees and average meal costs to Indian Rupees (INR). set cuisine to null for attractions.`;
+}
+
+export function generateMockCityAndPlaces(cityName: string): GeneratedCity {
+  const formattedCityName = cityName.trim().replace(/\b\w/g, (c) => c.toUpperCase());
+  return {
+    name: formattedCityName,
+    country: "Global",
+    latitude: 0,
+    longitude: 0,
+    description: `A beautiful and historic city known for its vibrant culture, landmarks, and delicious local cuisine.`,
+    places: [
+      {
+        name: `${formattedCityName} Landmark Plaza`,
+        type: "ATTRACTION",
+        category: "Historical",
+        description: "The historic central plaza of the city, surrounded by gorgeous architecture.",
+        address: "City Center, " + formattedCityName,
+        latitude: 0.001,
+        longitude: 0.001,
+        priceLevel: 1,
+        avgCostInr: 0,
+        entryFeeInr: 0,
+        openingHours: "24/7",
+        visitDuration: "1 hr",
+        crowdLevel: "High",
+        cuisine: null,
+        isVegFriendly: true,
+      },
+      {
+        name: `Museum of ${formattedCityName}`,
+        type: "ATTRACTION",
+        category: "Museum",
+        description: "Explore the fascinating history and art of the region through interactive exhibits.",
+        address: "Culture Way, " + formattedCityName,
+        latitude: -0.002,
+        longitude: 0.003,
+        priceLevel: 2,
+        avgCostInr: 150,
+        entryFeeInr: 150,
+        openingHours: "9:00 AM - 5:00 PM",
+        visitDuration: "2 hr",
+        crowdLevel: "Medium",
+        cuisine: null,
+        isVegFriendly: true,
+      },
+      {
+        name: `${formattedCityName} Botanical Gardens`,
+        type: "ATTRACTION",
+        category: "Nature",
+        description: "A peaceful sanctuary featuring diverse plant species and scenic walking paths.",
+        address: "Green Boulevard, " + formattedCityName,
+        latitude: 0.005,
+        longitude: -0.004,
+        priceLevel: 1,
+        avgCostInr: 50,
+        entryFeeInr: 50,
+        openingHours: "8:00 AM - 6:00 PM",
+        visitDuration: "1.5 hr",
+        crowdLevel: "Low",
+        cuisine: null,
+        isVegFriendly: true,
+      },
+      {
+        name: `${formattedCityName} Street Food Market`,
+        type: "RESTAURANT",
+        category: "Street food",
+        description: "A bustling market offering the absolute best of local street eats and snacks.",
+        address: "Bazaar Street, " + formattedCityName,
+        latitude: -0.001,
+        longitude: -0.001,
+        priceLevel: 1,
+        avgCostInr: 200,
+        entryFeeInr: null,
+        openingHours: "4:00 PM - 11:00 PM",
+        visitDuration: "1.5 hr",
+        crowdLevel: "High",
+        cuisine: "Local",
+        isVegFriendly: true,
+      },
+      {
+        name: `The ${formattedCityName} Cafe`,
+        type: "RESTAURANT",
+        category: "Cafe",
+        description: "A cozy spot offering great coffee, fresh pastries, and light breakfast options.",
+        address: "Main Road, " + formattedCityName,
+        latitude: 0.002,
+        longitude: -0.002,
+        priceLevel: 2,
+        avgCostInr: 250,
+        entryFeeInr: null,
+        openingHours: "7:00 AM - 8:00 PM",
+        visitDuration: "1 hr",
+        crowdLevel: "Medium",
+        cuisine: "Cafe",
+        isVegFriendly: true,
+      },
+      {
+        name: `Heritage Royal Dining`,
+        type: "RESTAURANT",
+        category: "Fine dining",
+        description: "Experience authentic premium recipes handed down through generations.",
+        address: "High Street, " + formattedCityName,
+        latitude: -0.003,
+        longitude: 0.002,
+        priceLevel: 4,
+        avgCostInr: 1200,
+        entryFeeInr: null,
+        openingHours: "12:00 PM - 11:00 PM",
+        visitDuration: "2 hr",
+        crowdLevel: "Medium",
+        cuisine: "Traditional",
+        isVegFriendly: true,
+      },
+    ],
+  };
+}
+
+export async function generateCityAndPlaces(cityName: string): Promise<GeneratedCity> {
+  // If API key is not configured, return mock data immediately
+  if (!env.anthropicApiKey && !env.openaiApiKey) {
+    console.log(`[AI] API keys not set, returning mock data for ${cityName}`);
+    return generateMockCityAndPlaces(cityName);
+  }
+
+  try {
+    const prompt = buildCityPrompt(cityName);
+    const raw = env.aiProvider === "openai" ? await callOpenAI(prompt) : await callAnthropic(prompt);
+    const parsed = JSON.parse(stripCodeFences(raw)) as GeneratedCity;
+    if (!parsed.name || !parsed.places || !Array.isArray(parsed.places)) {
+      throw new Error("Invalid structure returned by AI");
+    }
+    return parsed;
+  } catch (err) {
+    console.error(`[AI] Error generating city info, falling back to mock:`, err);
+    return generateMockCityAndPlaces(cityName);
+  }
+}
+

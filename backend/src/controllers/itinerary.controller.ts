@@ -2,6 +2,7 @@ import { Response } from "express";
 import { prisma } from "../config/db";
 import { AuthedRequest } from "../middleware/auth";
 import { generateItinerary } from "../services/ai.service";
+import { ensureCityExists } from "../services/cityPopulator.service";
 import { NotFoundError } from "../utils/AppError";
 import { encodeStringArray, decodeStringArray } from "../utils/json";
 
@@ -12,17 +13,21 @@ function withParsedInterests<T extends { interests: string }>(trip: T) {
 export async function createItinerary(req: AuthedRequest, res: Response) {
   const { cityName, days, people, budgetInr, hotelName, travelMode, foodPref, interests } = req.body;
 
-  const city = await prisma.city.upsert({
-    where: { name_country: { name: cityName, country: "India" } },
-    update: {},
-    create: { name: cityName, country: "India", latitude: 0, longitude: 0 },
-  });
+  let city = await ensureCityExists(cityName);
+  if (!city) {
+    city = await prisma.city.upsert({
+      where: { name_country: { name: cityName, country: "India" } },
+      update: {},
+      create: { name: cityName, country: "India", latitude: 0, longitude: 0 },
+    });
+  }
 
   const aiDays = await generateItinerary({
     cityName, days, people, budgetInr, hotelName, travelMode, foodPref, interests,
   });
 
   const trip = await prisma.trip.create({
+
     data: {
       userId: req.user!.id,
       cityId: city.id,

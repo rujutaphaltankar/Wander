@@ -13,6 +13,13 @@ export default function Home() {
   const [nearby, setNearby] = useState<Place[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [safetyOpen, setSafetyOpen] = useState(false);
+  const [weather, setWeather] = useState<any>({
+    temp: 29,
+    condition: "Partly cloudy",
+    feelsLike: 32,
+    city: "Pune",
+    wind: 12
+  });
 
   useEffect(() => {
     api
@@ -24,7 +31,25 @@ export default function Home() {
       .get("/favorites")
       .then((res) => setFavorites(res.data.favorites.map((f: any) => f.placeId)))
       .catch(() => setFavorites([]));
+
+    // Fetch live weather for Pune
+    fetch("https://api.open-meteo.com/v1/forecast?latitude=18.5204&longitude=73.8567&current_weather=true")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.current_weather) {
+          const w = data.current_weather;
+          setWeather({
+            temp: Math.round(w.temperature),
+            condition: w.weathercode <= 3 ? "Clear/Partly cloudy" : "Rain/Showers",
+            feelsLike: Math.round(w.temperature),
+            city: "Pune",
+            wind: w.windspeed
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
+
 
   async function toggleFavorite(placeId: string) {
     if (favorites.includes(placeId)) {
@@ -120,9 +145,9 @@ export default function Home() {
           <div className="rounded-3xl p-5 text-white relative overflow-hidden bg-gradient-to-br from-blue to-navy shadow-sm">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-xs opacity-80">Pune · now</div>
-                <div className="font-display text-3xl font-semibold mt-1">29°C</div>
-                <div className="text-xs opacity-85 mt-1">Partly cloudy · feels like 32°</div>
+                <div className="text-xs opacity-80">{weather.city} · live</div>
+                <div className="font-display text-3xl font-semibold mt-1">{weather.temp}°C</div>
+                <div className="text-xs opacity-85 mt-1">{weather.condition} · feels like {weather.feelsLike}°</div>
               </div>
               <Cloud size={34} strokeWidth={1.5} />
             </div>
@@ -134,11 +159,11 @@ export default function Home() {
                 <Sunset size={13} /> 7:18 PM
               </div>
               <div className="flex items-center gap-1">
-                <CloudRain size={13} /> Rain after 6 PM
+                <Wind size={13} /> Wind: {weather.wind} km/h
               </div>
             </div>
             <div className="text-[10px] opacity-70 mt-3">
-              Illustrative — wire up WEATHER_API_KEY in the backend to make this live.
+              Powered by Open-Meteo API.
             </div>
           </div>
 

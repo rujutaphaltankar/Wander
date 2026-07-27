@@ -4,6 +4,7 @@ import { TopBar } from "../components/TopBar";
 import { PlaceCard } from "../components/PlaceCard";
 import { api } from "../api/client";
 import { Place } from "../types";
+import { Cloud, Sunrise, Sunset, Wind, MapPin, Sparkles } from "lucide-react";
 
 const CATEGORIES = ["All", "Street food", "South Indian", "Cafe", "Asian", "Fine dining", "Irani cafe"];
 const BUDGETS = [100, 250, 500, 1000, 2000];
@@ -19,7 +20,47 @@ export default function Explore() {
   const [city, setCity] = useState<string | null>(searchParams.get("city") ?? null);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cityData, setCityData] = useState<any>(null);
+  const [weatherData, setWeatherData] = useState<any>(null);
 
+  // Sync city parameter from URL to city state
+  useEffect(() => {
+    const urlCity = searchParams.get("city");
+    if (urlCity && urlCity !== city) {
+      setCity(urlCity);
+    }
+  }, [searchParams]);
+
+  // Fetch city metadata & live weather
+  useEffect(() => {
+    if (city) {
+      api.get("/cities", { params: { q: city } })
+        .then((res) => {
+          if (res.data.count > 0) {
+            const found = res.data.cities.find((c: any) => c.name.toLowerCase() === city.toLowerCase()) ?? res.data.cities[0];
+            setCityData(found);
+            
+            // Fetch weather from open-meteo
+            if (found.latitude !== undefined && found.longitude !== undefined) {
+              fetch(`https://api.open-meteo.com/v1/forecast?latitude=${found.latitude}&longitude=${found.longitude}&current_weather=true`)
+                .then(r => r.json())
+                .then(data => {
+                  if (data.current_weather) {
+                    setWeatherData(data.current_weather);
+                  }
+                })
+                .catch(err => console.error("Weather fetch error", err));
+            }
+          }
+        })
+        .catch(err => console.error("City fetch error", err));
+    } else {
+      setCityData(null);
+      setWeatherData(null);
+    }
+  }, [city]);
+
+  // Fetch places
   useEffect(() => {
     setLoading(true);
     const params: Record<string, string | number> = { type: "RESTAURANT" };
@@ -28,9 +69,13 @@ export default function Explore() {
     if (budget) params.maxPrice = budget;
     if (q) params.q = q;
 
+    const attrParams: Record<string, string | number> = { type: "ATTRACTION" };
+    if (city) attrParams.city = city;
+    if (q) attrParams.q = q;
+
     Promise.all([
       api.get("/places", { params }),
-      api.get("/places", { params: { type: "ATTRACTION" } }),
+      api.get("/places", { params: attrParams }),
       api.get("/favorites").catch(() => ({ data: { favorites: [] } })),
     ])
       .then(([foodRes, attrRes, favRes]) => {
@@ -39,7 +84,7 @@ export default function Explore() {
         setFavorites(favRes.data.favorites.map((f: any) => f.placeId));
       })
       .finally(() => setLoading(false));
-  }, [category, budget, q]);
+  }, [category, budget, q, city]);
 
   useEffect(() => {
     // keep URL in sync with q and city state
@@ -63,6 +108,61 @@ export default function Explore() {
     <div className="pb-8">
       {/* Page Header */}
       <TopBar title={`Explore ${city ?? "Pune"}`} sub={`${places.length + attractions.length} recommendations nearby`} />
+
+      {/* Map, Weather & Travel Info Dashboard */}
+      {cityData && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-4 animate-fadeIn">
+          {/* Map Embed Card */}
+          <div className="md:col-span-2 card p-0 overflow-hidden relative h-72 rounded-3xl border border-line dark:border-[#22333A] bg-white dark:bg-[#122029]">
+            <iframe
+              title="City Map"
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(cityData.name + ", " + cityData.country)}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
+              allowFullScreen
+            />
+          </div>
+
+          {/* Live Weather & Info Card */}
+          <div className="card p-6 rounded-3xl flex flex-col justify-between bg-gradient-to-br from-blue to-navy text-white shadow-sm relative overflow-hidden">
+            <div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-display font-bold text-xl">{cityData.name}</h3>
+                  <p className="text-xs opacity-75">{cityData.country}</p>
+                </div>
+                {weatherData && (
+                  <div className="text-right flex items-center gap-2">
+                    <Cloud className="text-cloud" size={24} />
+                    <div>
+                      <div className="text-2xl font-display font-semibold">{Math.round(weatherData.temperature)}°C</div>
+                      <div className="text-[10px] opacity-75 mt-0.5">Wind: {weatherData.windspeed} km/h</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs opacity-90 mt-4 leading-relaxed line-clamp-4">
+                {cityData.description || `Explore local street food, historic monuments, and beautiful landmarks in ${cityData.name}.`}
+              </p>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2.5">
+              <div className="flex items-center gap-2 text-[11px] opacity-85">
+                <MapPin size={12} />
+                <span>Lat/Lng: {cityData.latitude.toFixed(3)}°, {cityData.longitude.toFixed(3)}°</span>
+              </div>
+              <button
+                onClick={() => navigate(`/planner?city=${encodeURIComponent(cityData.name)}`)}
+                className="w-full flex items-center justify-center gap-2 bg-green text-ink hover:bg-green-soft font-semibold text-xs py-2.5 rounded-xl transition-all shadow-sm"
+              >
+                <Sparkles size={14} />
+                Generate AI Itinerary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Control Panel Card */}
       <div className="card p-5 mb-8 space-y-4 transition-colors">
@@ -159,3 +259,4 @@ export default function Explore() {
     </div>
   );
 }
+

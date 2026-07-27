@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Sparkles, Loader2, AlertTriangle, Plus, Minus, Footprints, Bike, Bus, Car, ArrowRight } from "lucide-react";
 import { TopBar } from "../components/TopBar";
 import { RouteTimeline } from "../components/RouteTimeline";
@@ -16,15 +16,19 @@ const MODES = [
 
 export default function Planner() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialCity = searchParams.get("city") ?? "";
+
   const [form, setForm] = useState({
-    cityName: "Pune",
+    cityName: initialCity || "Pune",
     days: 2,
     people: 2,
     budgetInr: 8000,
-    hotelName: "Koregaon Park",
+    hotelName: initialCity ? "City Center" : "Koregaon Park",
     travelMode: "WALK",
     foodPref: "Vegetarian",
   });
+
   const [interests, setInterests] = useState<string[]>(["Food", "History"]);
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [trip, setTrip] = useState<Trip | null>(null);
