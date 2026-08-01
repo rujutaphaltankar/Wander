@@ -4,16 +4,39 @@ import { TopBar } from "../components/TopBar";
 import { PlaceCard } from "../components/PlaceCard";
 import { api } from "../api/client";
 import { Place } from "../types";
-import { Cloud, Sunrise, Sunset, Wind, MapPin, Sparkles } from "lucide-react";
+import { Cloud, Wind, MapPin, Sparkles, UtensilsCrossed, Landmark, Star, Loader2 } from "lucide-react";
 
-const CATEGORIES = ["All", "Street food", "South Indian", "Cafe", "Asian", "Fine dining", "Irani cafe"];
-const BUDGETS = [100, 250, 500, 1000, 2000];
+const ALL_CATEGORIES = [
+  "All",
+  // Food
+  "Street food", "Café", "Fine dining", "Local cuisine", "Seafood", "Asian", "Mediterranean", "Fast food",
+  // Attractions
+  "Historical", "Museum", "Nature", "Beach", "Viewpoint", "Religious", "Architecture",
+  // Activities
+  "Tours", "Nightlife", "Adventure", "Shopping", "Cultural experience", "Sports", "Entertainment",
+];
+
+const BUDGETS = [200, 500, 1000, 2500, 5000];
+
+type TabType = "food" | "sights" | "activities";
+
+const WMO_CODES: Record<number, string> = {
+  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+  45: "Fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+  61: "Light rain", 63: "Rain", 65: "Heavy rain",
+  71: "Light snow", 73: "Snow", 75: "Heavy snow",
+  80: "Showers", 81: "Rain showers", 82: "Heavy showers",
+  95: "Thunderstorm", 99: "Heavy thunderstorm",
+};
 
 export default function Explore() {
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [attractions, setAttractions] = useState<Place[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>("food");
+  const [foodPlaces, setFoodPlaces] = useState<Place[]>([]);
+  const [attractionPlaces, setAttractionPlaces] = useState<Place[]>([]);
+  const [activityPlaces, setActivityPlaces] = useState<Place[]>([]);
   const [category, setCategory] = useState("All");
   const [budget, setBudget] = useState<number | null>(null);
+  const [vegOnly, setVegOnly] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [q, setQ] = useState<string>(searchParams.get("q") ?? "");
@@ -22,16 +45,14 @@ export default function Explore() {
   const [loading, setLoading] = useState(true);
   const [cityData, setCityData] = useState<any>(null);
   const [weatherData, setWeatherData] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
 
-  // Sync city parameter from URL to city state
   useEffect(() => {
     const urlCity = searchParams.get("city");
-    if (urlCity && urlCity !== city) {
-      setCity(urlCity);
-    }
+    if (urlCity && urlCity !== city) setCity(urlCity);
   }, [searchParams]);
 
-  // Fetch city metadata & live weather
+  // Fetch city metadata & weather
   useEffect(() => {
     if (city) {
       api.get("/cities", { params: { q: city } })
@@ -39,55 +60,47 @@ export default function Explore() {
           if (res.data.count > 0) {
             const found = res.data.cities.find((c: any) => c.name.toLowerCase() === city.toLowerCase()) ?? res.data.cities[0];
             setCityData(found);
-            
-            // Fetch weather from open-meteo
-            if (found.latitude !== undefined && found.longitude !== undefined) {
-              fetch(`https://api.open-meteo.com/v1/forecast?latitude=${found.latitude}&longitude=${found.longitude}&current_weather=true`)
-                .then(r => r.json())
-                .then(data => {
-                  if (data.current_weather) {
-                    setWeatherData(data.current_weather);
-                  }
-                })
-                .catch(err => console.error("Weather fetch error", err));
+            if (found.latitude && found.longitude) {
+              fetch(`https://api.open-meteo.com/v1/forecast?latitude=${found.latitude}&longitude=${found.longitude}&current_weather=true&timezone=auto`)
+                .then((r) => r.json())
+                .then((data) => { if (data.current_weather) setWeatherData(data.current_weather); })
+                .catch(() => {});
             }
           }
         })
-        .catch(err => console.error("City fetch error", err));
+        .catch(() => {});
     } else {
       setCityData(null);
       setWeatherData(null);
     }
   }, [city]);
 
-  // Fetch places
+  // Fetch all place types in parallel
   useEffect(() => {
     setLoading(true);
-    const params: Record<string, string | number> = { type: "RESTAURANT" };
-    if (city) params.city = city;
-    if (category !== "All") params.category = category;
-    if (budget) params.maxPrice = budget;
-    if (q) params.q = q;
-
-    const attrParams: Record<string, string | number> = { type: "ATTRACTION" };
-    if (city) attrParams.city = city;
-    if (q) attrParams.q = q;
+    const base: Record<string, string | number> = {};
+    if (city) base.city = city;
+    if (category !== "All") base.category = category;
+    if (budget) base.maxPrice = budget;
+    if (q) base.q = q;
+    if (vegOnly) base.veg = "true";
 
     Promise.all([
-      api.get("/places", { params }),
-      api.get("/places", { params: attrParams }),
+      api.get("/places", { params: { ...base, type: "RESTAURANT" } }),
+      api.get("/places", { params: { ...base, type: "ATTRACTION" } }),
+      api.get("/places", { params: { ...base, type: "ACTIVITY" } }),
       api.get("/favorites").catch(() => ({ data: { favorites: [] } })),
     ])
-      .then(([foodRes, attrRes, favRes]) => {
-        setPlaces(foodRes.data.places);
-        setAttractions(attrRes.data.places);
+      .then(([foodRes, attrRes, actRes, favRes]) => {
+        setFoodPlaces(foodRes.data.places);
+        setAttractionPlaces(attrRes.data.places);
+        setActivityPlaces(actRes.data.places);
         setFavorites(favRes.data.favorites.map((f: any) => f.placeId));
       })
       .finally(() => setLoading(false));
-  }, [category, budget, q, city]);
+  }, [category, budget, q, city, vegOnly]);
 
   useEffect(() => {
-    // keep URL in sync with q and city state
     const params: Record<string, string> = {};
     if (q) params.q = q;
     if (city) params.city = city;
@@ -104,16 +117,31 @@ export default function Explore() {
     }
   }
 
+  const currentPlaces =
+    activeTab === "food" ? foodPlaces :
+    activeTab === "sights" ? attractionPlaces :
+    activityPlaces;
+
+  const tabConfig: { key: TabType; label: string; icon: any; count: number }[] = [
+    { key: "food", label: "Food & Dining", icon: UtensilsCrossed, count: foodPlaces.length },
+    { key: "sights", label: "Sights & Attractions", icon: Landmark, count: attractionPlaces.length },
+    { key: "activities", label: "Activities", icon: Star, count: activityPlaces.length },
+  ];
+
+  const totalCount = foodPlaces.length + attractionPlaces.length + activityPlaces.length;
+
   return (
     <div className="pb-8">
-      {/* Page Header */}
-      <TopBar title={`Explore ${city ?? "Pune"}`} sub={`${places.length + attractions.length} recommendations nearby`} />
+      <TopBar
+        title={city ? `Explore ${city}` : "Explore Worldwide"}
+        sub={loading ? "Loading places…" : `${totalCount} place${totalCount !== 1 ? "s" : ""} found`}
+      />
 
-      {/* Map, Weather & Travel Info Dashboard */}
+      {/* City Dashboard */}
       {cityData && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-4 animate-fadeIn">
-          {/* Map Embed Card */}
-          <div className="md:col-span-2 card p-0 overflow-hidden relative h-72 rounded-3xl border border-line dark:border-[#22333A] bg-white dark:bg-[#122029]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6 mt-2 animate-fadeIn">
+          {/* Map */}
+          <div className="md:col-span-2 card p-0 overflow-hidden relative h-64 rounded-3xl border border-line dark:border-[#22333A]">
             <iframe
               title="City Map"
               width="100%"
@@ -124,8 +152,8 @@ export default function Explore() {
             />
           </div>
 
-          {/* Live Weather & Info Card */}
-          <div className="card p-6 rounded-3xl flex flex-col justify-between bg-gradient-to-br from-blue to-navy text-white shadow-sm relative overflow-hidden">
+          {/* Weather + City Info */}
+          <div className="card p-5 rounded-3xl flex flex-col justify-between bg-gradient-to-br from-blue to-navy text-white shadow-sm">
             <div>
               <div className="flex justify-between items-start">
                 <div>
@@ -133,64 +161,60 @@ export default function Explore() {
                   <p className="text-xs opacity-75">{cityData.country}</p>
                 </div>
                 {weatherData && (
-                  <div className="text-right flex items-center gap-2">
-                    <Cloud className="text-cloud" size={24} />
-                    <div>
-                      <div className="text-2xl font-display font-semibold">{Math.round(weatherData.temperature)}°C</div>
-                      <div className="text-[10px] opacity-75 mt-0.5">Wind: {weatherData.windspeed} km/h</div>
-                    </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-display font-semibold">{Math.round(weatherData.temperature)}°C</div>
+                    <div className="text-[10px] opacity-75">{WMO_CODES[weatherData.weathercode] ?? ""}</div>
                   </div>
                 )}
               </div>
-              <p className="text-xs opacity-90 mt-4 leading-relaxed line-clamp-4">
-                {cityData.description || `Explore local street food, historic monuments, and beautiful landmarks in ${cityData.name}.`}
+              <p className="text-xs opacity-85 mt-3 leading-relaxed line-clamp-3">
+                {cityData.description || `Discover amazing food, sights, and activities in ${cityData.name}.`}
               </p>
+              {weatherData && (
+                <div className="flex items-center gap-3 mt-3 text-[11px] opacity-80">
+                  <div className="flex items-center gap-1"><Wind size={11} /> {weatherData.windspeed} km/h</div>
+                  <div className="flex items-center gap-1"><MapPin size={11} /> {cityData.latitude?.toFixed(2)}°, {cityData.longitude?.toFixed(2)}°</div>
+                </div>
+              )}
             </div>
-            
-            <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2.5">
-              <div className="flex items-center gap-2 text-[11px] opacity-85">
-                <MapPin size={12} />
-                <span>Lat/Lng: {cityData.latitude.toFixed(3)}°, {cityData.longitude.toFixed(3)}°</span>
-              </div>
-              <button
-                onClick={() => navigate(`/planner?city=${encodeURIComponent(cityData.name)}`)}
-                className="w-full flex items-center justify-center gap-2 bg-green text-ink hover:bg-green-soft font-semibold text-xs py-2.5 rounded-xl transition-all shadow-sm"
-              >
-                <Sparkles size={14} />
-                Generate AI Itinerary
-              </button>
-            </div>
+            <button
+              onClick={() => navigate(`/planner?city=${encodeURIComponent(cityData.name)}`)}
+              className="w-full flex items-center justify-center gap-2 bg-green text-ink hover:bg-green-soft font-semibold text-xs py-2.5 rounded-xl transition-all shadow-sm mt-4"
+            >
+              <Sparkles size={14} /> Generate AI Itinerary
+            </button>
           </div>
         </div>
       )}
 
-      {/* Control Panel Card */}
-      <div className="card p-5 mb-8 space-y-4 transition-colors">
-        {/* Search */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate({ pathname: "/explore", search: q ? `?q=${encodeURIComponent(q)}` : "" });
-          }}
-        >
+      {/* Filters */}
+      <div className="card p-5 mb-6 space-y-4 transition-colors">
+        {/* Search + city */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            value={city ?? ""}
+            onChange={(e) => setCity(e.target.value || null)}
+            placeholder="City (e.g. Paris, Tokyo, Mumbai)"
+            className="card w-full rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-[#122029]"
+          />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search restaurants, cafes, attractions (e.g. 'Shaniwar', 'Vaishali')"
-            className="card w-full rounded-2xl px-4 py-3 text-sm bg-white dark:bg-[#122029]"
+            placeholder="Search place name…"
+            className="card w-full rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-[#122029]"
           />
-        </form>
+        </div>
 
-        {/* Categories */}
+        {/* Category chips */}
         <div className="space-y-1.5">
-          <div className="text-xs text-muted font-semibold">Categories</div>
-          <div className="flex gap-2 flex-wrap">
-            {CATEGORIES.map((c) => (
+          <div className="text-xs text-muted font-semibold">Category</div>
+          <div className="flex gap-2 flex-wrap max-h-24 overflow-y-auto">
+            {ALL_CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
                 data-active={category === c}
-                className="chip"
+                className="chip text-xs"
               >
                 {c}
               </button>
@@ -198,65 +222,103 @@ export default function Explore() {
           </div>
         </div>
 
-        {/* Budgets */}
-        <div className="space-y-1.5">
-          <div className="text-xs text-muted font-semibold">Max Price Preference</div>
-          <div className="flex gap-2 flex-wrap">
-            {BUDGETS.map((b) => (
-              <button
-                key={b}
-                onClick={() => setBudget(budget === b ? null : b)}
-                data-active={budget === b}
-                className="chip font-mono"
-              >
-                {b === 2000 ? "₹2000+" : `₹${b}`}
-              </button>
-            ))}
+        {/* Budget + Veg */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="space-y-1.5 flex-1 min-w-[200px]">
+            <div className="text-xs text-muted font-semibold">Max Cost Per Person</div>
+            <div className="flex gap-2 flex-wrap">
+              {BUDGETS.map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBudget(budget === b ? null : b)}
+                  data-active={budget === b}
+                  className="chip font-mono text-xs"
+                >
+                  ₹{b.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => setVegOnly(!vegOnly)}
+              data-active={vegOnly}
+              className="chip text-xs"
+            >
+              🥦 Veg only
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Results Section */}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-cloud dark:bg-[#122029] p-1 rounded-2xl border border-line dark:border-[#22333A]">
+        {tabConfig.map(({ key, label, icon: Icon, count }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-all ${
+              activeTab === key
+                ? "bg-white dark:bg-[#0B171E] text-green shadow-sm"
+                : "text-muted hover:text-ink dark:hover:text-[#EAF3EF]"
+            }`}
+          >
+            <Icon size={14} />
+            <span className="hidden sm:inline">{label}</span>
+            <span className="text-xs font-mono bg-line dark:bg-[#22333A] px-1.5 py-0.5 rounded-full">{count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Results */}
       {loading ? (
-        <div className="py-12 text-sm text-muted text-center card rounded-2xl">
-          Loading recommended places…
+        <div className="py-16 text-center">
+          <Loader2 size={28} className="animate-spin text-green mx-auto mb-3" />
+          <div className="text-sm text-muted">
+            {city ? `Loading places in ${city}…` : "Loading places…"}
+          </div>
+          {city && (
+            <div className="text-xs text-muted mt-1 opacity-70">
+              First visit to a new city generates AI-powered places — may take 10-15s
+            </div>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Restaurants list */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-line dark:border-[#22333A] pb-3 mb-2">
-              <h2 className="font-display font-bold text-lg text-ink dark:text-[#EAF3EF]">Food & Dining</h2>
-              <span className="text-xs text-muted font-mono bg-cloud dark:bg-[#122029] border border-line dark:border-[#22333A] px-2.5 py-1 rounded-full">{places.length} found</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {places.map((p) => (
-                <PlaceCard key={p.id} place={p} isFavorite={favorites.includes(p.id)} onToggleFavorite={toggleFavorite} />
+        <>
+          {currentPlaces.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {currentPlaces.map((p) => (
+                <PlaceCard
+                  key={p.id}
+                  place={p}
+                  isFavorite={favorites.includes(p.id)}
+                  onToggleFavorite={toggleFavorite}
+                />
               ))}
             </div>
-            {places.length === 0 && (
-              <div className="text-sm text-muted py-6">No restaurants match those filters yet.</div>
-            )}
-          </div>
-
-          {/* Attractions list */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-line dark:border-[#22333A] pb-3 mb-2">
-              <h2 className="font-display font-bold text-lg text-ink dark:text-[#EAF3EF]">Sights & Attractions</h2>
-              <span className="text-xs text-muted font-mono bg-cloud dark:bg-[#122029] border border-line dark:border-[#22333A] px-2.5 py-1 rounded-full">{attractions.length} found</span>
+          ) : (
+            <div className="card rounded-3xl p-10 text-center">
+              {activeTab === "food" && <UtensilsCrossed size={32} className="text-muted mx-auto mb-3" />}
+              {activeTab === "sights" && <Landmark size={32} className="text-muted mx-auto mb-3" />}
+              {activeTab === "activities" && <Star size={32} className="text-muted mx-auto mb-3" />}
+              <div className="text-sm font-semibold text-ink dark:text-[#EAF3EF] mb-1">No places found</div>
+              <div className="text-xs text-muted mb-4">
+                {city
+                  ? `Try removing filters, or this city may still be generating.`
+                  : "Enter a city name above to discover places worldwide."}
+              </div>
+              {city && (
+                <button
+                  onClick={() => { setCategory("All"); setBudget(null); setVegOnly(false); setQ(""); }}
+                  className="chip text-xs mx-auto"
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {attractions.map((a) => (
-                <PlaceCard key={a.id} place={a} isFavorite={favorites.includes(a.id)} onToggleFavorite={toggleFavorite} />
-              ))}
-            </div>
-            {attractions.length === 0 && (
-              <div className="text-sm text-muted py-6">No attractions found.</div>
-            )}
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
 }
-

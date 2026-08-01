@@ -7,6 +7,7 @@ import Explore from "./pages/Explore";
 import Planner from "./pages/Planner";
 import BudgetPage from "./pages/Budget";
 import Profile from "./pages/Profile";
+import TripDetail from "./pages/TripDetail";
 import { Navbar } from "./components/Navbar";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useUiStore } from "./store/uiStore";
@@ -37,6 +38,7 @@ export default function App() {
                     <Route path="/planner" element={<Planner />} />
                     <Route path="/budget" element={<BudgetPage />} />
                     <Route path="/profile" element={<Profile />} />
+                    <Route path="/trips/:id" element={<TripDetail />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>

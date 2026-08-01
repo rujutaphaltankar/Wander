@@ -5,20 +5,19 @@ export async function ensureCityExists(cityName: string) {
   const trimmed = cityName.trim();
   if (!trimmed) return null;
 
-  // Case-insensitive lookup using findMany (safe for SQLite)
+  // Case-insensitive lookup (safe for SQLite)
   const allCities = await prisma.city.findMany();
   const existing = allCities.find(
     (c) => c.name.toLowerCase() === trimmed.toLowerCase()
   );
 
   if (existing) {
-    // If the city exists but has no places, populate them
     const placeCount = await prisma.place.count({ where: { cityId: existing.id } });
     if (placeCount > 0) {
       return existing;
     }
-    
-    // City exists but has no places - generate and insert places only
+
+    // City exists but has no places — generate them
     console.log(`[CityPopulator] City ${existing.name} has no places, generating...`);
     const generated = await generateCityAndPlaces(existing.name);
     if (generated && generated.places.length > 0) {
@@ -46,11 +45,11 @@ export async function ensureCityExists(cityName: string) {
     return existing;
   }
 
-  // City does not exist at all - generate city and places
-  console.log(`[CityPopulator] City ${trimmed} not found. Generating dynamically...`);
+  // City does not exist — generate city + 12 places
+  console.log(`[CityPopulator] "${trimmed}" not found. Generating dynamically...`);
   const generated = await generateCityAndPlaces(trimmed);
 
-  // Check if city was created by a concurrent request
+  // Guard against concurrent creation
   const checkAgain = await prisma.city.findFirst({
     where: { name: generated.name, country: generated.country },
   });

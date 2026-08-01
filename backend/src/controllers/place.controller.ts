@@ -4,12 +4,9 @@ import { prisma } from "../config/db";
 import { NotFoundError } from "../utils/AppError";
 import { ensureCityExists } from "../services/cityPopulator.service";
 
-// GET /api/places?city=Pune&type=RESTAURANT&category=Street+food&maxPrice=500&veg=true
+// GET /api/places?city=Tokyo&type=RESTAURANT&category=Street+food&maxPrice=500&veg=true
 //
-// Note: SQLite doesn't support Prisma's `mode: "insensitive"` filter (that's a
-// Postgres/MongoDB feature), so text filters here are case-sensitive. Seed data
-// uses consistent casing, but if you switch to Postgres later you can add
-// `mode: "insensitive"` back to each filter below.
+// Supports type=ATTRACTION | RESTAURANT | ACTIVITY
 export async function listPlaces(req: Request, res: Response) {
   const { city, type, category, maxPrice, veg, q } = req.query as Record<string, string | undefined>;
 
@@ -22,7 +19,11 @@ export async function listPlaces(req: Request, res: Response) {
       where.city = { name: { equals: city } };
     }
   }
-  if (type && (type === "ATTRACTION" || type === "RESTAURANT")) where.type = type;
+
+  // Allow ATTRACTION, RESTAURANT, and ACTIVITY types
+  const validTypes = ["ATTRACTION", "RESTAURANT", "ACTIVITY"];
+  if (type && validTypes.includes(type)) where.type = type;
+
   if (category) where.category = { equals: category };
   if (maxPrice) where.avgCostInr = { lte: Number(maxPrice) };
   if (veg === "true") where.isVegFriendly = true;
@@ -36,7 +37,6 @@ export async function listPlaces(req: Request, res: Response) {
 
   res.json({ success: true, count: places.length, places });
 }
-
 
 export async function getPlace(req: Request, res: Response) {
   const place = await prisma.place.findUnique({
@@ -70,7 +70,6 @@ export async function createReview(req: Request & { user?: { id: string } }, res
     data: { userId: req.user!.id, placeId, rating, comment },
   });
 
-  // Recompute the running average rating for the place.
   const agg = await prisma.review.aggregate({
     where: { placeId, isApproved: true },
     _avg: { rating: true },

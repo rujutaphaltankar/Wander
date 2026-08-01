@@ -27,9 +27,10 @@ export const env = {
   refreshExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN ?? "30d",
   bcryptSaltRounds: Number(process.env.BCRYPT_SALT_ROUNDS ?? 10),
 
-  aiProvider: (process.env.AI_PROVIDER ?? "anthropic") as "anthropic" | "openai",
+  aiProvider: (process.env.AI_PROVIDER ?? "anthropic") as "anthropic" | "openai" | "groq",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  groqApiKey: process.env.GROQ_API_KEY ?? "",
 
   weatherApiKey: process.env.WEATHER_API_KEY ?? "",
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
