@@ -100,7 +100,14 @@ export async function listTrips(req: AuthedRequest, res: Response) {
 export async function getTrip(req: AuthedRequest, res: Response) {
   const trip = await prisma.trip.findFirst({
     where: { id: req.params.id, userId: req.user!.id },
-    include: { itineraryDays: { include: { activities: true }, orderBy: { dayNumber: "asc" } }, city: true, budget: true },
+    include: {
+      itineraryDays: {
+        include: { activities: { include: { place: true } } },
+        orderBy: { dayNumber: "asc" },
+      },
+      city: { include: { places: true } },
+      budget: true,
+    },
   });
   if (!trip) throw new NotFoundError("That trip doesn't exist.");
   res.json({ success: true, trip: withParsedInterests(trip) });

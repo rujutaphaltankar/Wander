@@ -4,9 +4,11 @@ import { api } from "../api/client";
 import { Trip } from "../types";
 import { TopBar } from "../components/TopBar";
 import { RouteTimeline } from "../components/RouteTimeline";
+import { MapView, MapPlaceItem } from "../components/MapView";
 import {
   MapPin, Clock, Users, Wallet, Hotel, Car, UtensilsCrossed,
-  Landmark, Star, ShoppingBag, Building2, ArrowLeft, Loader2, CalendarDays, Sparkles
+  Landmark, Star, ShoppingBag, Building2, ArrowLeft, Loader2,
+  CalendarDays, Sparkles, Printer, Download, Share2, Check
 } from "lucide-react";
 
 const TYPE_ICONS: Record<string, any> = {
@@ -21,10 +23,11 @@ const TYPE_ICONS: Record<string, any> = {
 export default function TripDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [trip, setTrip] = useState<Trip | null>(null);
+  const [trip, setTrip] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState(0);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -55,30 +58,132 @@ export default function TripDetail() {
   }
 
   // Compute per-day and total costs
-  const dayCosts = trip.itineraryDays.map((d) =>
+  const dayCosts = trip.itineraryDays.map((d: any) =>
     (d.activities ?? []).reduce((s: number, a: any) => s + (a.costInr ?? 0), 0)
   );
-  const totalCost = dayCosts.reduce((s, v) => s + v, 0);
+  const totalCost = dayCosts.reduce((s: number, v: number) => s + v, 0);
   const budgetDiff = trip.budgetInr - totalCost;
   const budgetPct = Math.min(100, Math.round((totalCost / Math.max(1, trip.budgetInr)) * 100));
 
   // Category breakdown
   const catTotals: Record<string, number> = {};
-  trip.itineraryDays.forEach((d) => {
+  trip.itineraryDays.forEach((d: any) => {
     (d.activities ?? []).forEach((a: any) => {
       catTotals[a.type] = (catTotals[a.type] ?? 0) + (a.costInr ?? 0);
     });
   });
 
+  // Calculate day route map pins
+  const currentDayActivities = trip.itineraryDays[activeDay]?.activities ?? [];
+  const cityPlaces: any[] = trip.city?.places ?? [];
+  const cityLat = trip.city?.latitude || 18.5204;
+  const cityLng = trip.city?.longitude || 73.8567;
+
+  // Match activities to places by title/name or placeId, with simulated offset for distinct stops
+  const dayMapPins: MapPlaceItem[] = currentDayActivities.map((act: any, idx: number) => {
+    let lat: number = cityLat;
+    let lng: number = cityLng;
+
+    const matchedPlace = act.place || cityPlaces.find((p: any) =>
+      act.title.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(act.title.toLowerCase())
+    );
+
+    if (matchedPlace && matchedPlace.latitude && matchedPlace.longitude) {
+      lat = matchedPlace.latitude;
+      lng = matchedPlace.longitude;
+    } else {
+      // Offset slightly per activity so they don't overlap if exact place coords aren't matched
+      const angle = (idx / Math.max(1, currentDayActivities.length)) * 2 * Math.PI;
+      const radius = 0.015 * (1 + (idx % 3) * 0.4);
+      lat = cityLat + Math.sin(angle) * radius;
+      lng = cityLng + Math.cos(angle) * radius;
+    }
+
+    return {
+      id: act.id || String(idx),
+      name: act.title,
+      type: act.type,
+      category: act.type,
+      description: `${act.time} · ${act.durationLabel || ""} ${act.note ? `— ${act.note}` : ""}`,
+      latitude: lat,
+      longitude: lng,
+      costInr: act.costInr,
+      orderNumber: idx + 1,
+    };
+  });
+
+  function handlePrint() {
+    window.print();
+  }
+
+  function handleShare() {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }
+
+  function handleExportICS() {
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      `PRODID:-//Wander App//${trip.title}//EN`,
+      `X-WR-CALNAME:${trip.title}`,
+    ];
+
+    trip.itineraryDays.forEach((d: any) => {
+      d.activities.forEach((a: any) => {
+        lines.push(
+          "BEGIN:VEVENT",
+          `SUMMARY:Day ${d.dayNumber}: ${a.title}`,
+          `DESCRIPTION:${a.time} - ${a.note || a.type} (Cost: INR ${a.costInr})`,
+          `LOCATION:${trip.city?.name || "Trip"}`,
+          "END:VEVENT"
+        );
+      });
+    });
+
+    lines.push("END:VCALENDAR");
+    const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${trip.title.replace(/\s+/g, "_")}.ics`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
-    <div className="pb-12">
-      {/* Back nav */}
-      <button
-        onClick={() => navigate("/profile")}
-        className="flex items-center gap-1.5 text-sm text-muted hover:text-ink dark:hover:text-[#EAF3EF] transition-colors mb-4"
-      >
-        <ArrowLeft size={14} /> Back to Profile
-      </button>
+    <div className="pb-12 print:p-0 print:m-0">
+      {/* Back nav & Actions */}
+      <div className="flex items-center justify-between gap-3 mb-4 print:hidden">
+        <button
+          onClick={() => navigate("/profile")}
+          className="flex items-center gap-1.5 text-sm text-muted hover:text-ink dark:hover:text-[#EAF3EF] transition-colors"
+        >
+          <ArrowLeft size={14} /> Back to Profile
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            className="card px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-cloud dark:hover:bg-[#122029]"
+          >
+            {copied ? <Check size={13} className="text-green" /> : <Share2 size={13} />}
+            {copied ? "Link Copied!" : "Share"}
+          </button>
+          <button
+            onClick={handleExportICS}
+            className="card px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-cloud dark:hover:bg-[#122029]"
+          >
+            <Download size={13} /> Export Calendar (.ics)
+          </button>
+          <button
+            onClick={handlePrint}
+            className="btn-primary px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+          >
+            <Printer size={13} /> Print Itinerary
+          </button>
+        </div>
+      </div>
 
       <TopBar
         title={`${trip.city?.name ?? ""} Trip`}
@@ -87,15 +192,14 @@ export default function TripDetail() {
 
       {/* City Map + Overview banner */}
       {trip.city && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 my-6">
-          <div className="md:col-span-2 card p-0 overflow-hidden rounded-3xl h-56 border border-line dark:border-[#22333A]">
-            <iframe
-              title="Trip Map"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              src={`https://maps.google.com/maps?q=${encodeURIComponent(trip.city.name + ", " + (trip.city.country ?? ""))}&t=&z=12&ie=UTF8&iwloc=&output=embed`}
-              allowFullScreen
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 my-6 print:grid-cols-2">
+          <div className="md:col-span-2 h-56 rounded-3xl overflow-hidden print:hidden">
+            <MapView
+              places={dayMapPins}
+              center={[cityLat, cityLng]}
+              zoom={13}
+              heightClass="h-56"
+              showRouteLine={true}
             />
           </div>
           <div className="card rounded-3xl p-5 bg-gradient-to-br from-blue to-navy text-white flex flex-col justify-between">
@@ -119,11 +223,11 @@ export default function TripDetail() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:block">
         {/* Day tabs + Timeline */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-line dark:border-[#22333A]">
-            {trip.itineraryDays.map((d, i) => (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-line dark:border-[#22333A] print:hidden">
+            {trip.itineraryDays.map((d: any, i: number) => (
               <button
                 key={i}
                 onClick={() => setActiveDay(i)}
@@ -140,7 +244,7 @@ export default function TripDetail() {
             <span className="font-semibold text-ink dark:text-[#EAF3EF]">
               Day {trip.itineraryDays[activeDay]?.dayNumber} — {(trip.itineraryDays[activeDay]?.activities?.length ?? 0)} activities
             </span>
-            <span className="font-mono text-green">₹{(dayCosts[activeDay] ?? 0).toLocaleString()}</span>
+            <span className="font-mono text-green font-bold">₹{(dayCosts[activeDay] ?? 0).toLocaleString()}</span>
           </div>
 
           <div className="card p-6 bg-white dark:bg-[#122029]">
@@ -151,7 +255,7 @@ export default function TripDetail() {
         </div>
 
         {/* Right: Budget Summary */}
-        <div className="space-y-5">
+        <div className="space-y-5 print:mt-6">
           {/* Trip budget card */}
           <div className="card p-5 rounded-3xl space-y-4">
             <h3 className="font-display font-bold text-base text-ink dark:text-[#EAF3EF] flex items-center gap-2 border-b border-line dark:border-[#22333A] pb-2">
@@ -218,13 +322,10 @@ export default function TripDetail() {
                 </div>
               );
             })}
-            {Object.keys(catTotals).length === 0 && (
-              <div className="text-xs text-muted">No cost data available.</div>
-            )}
           </div>
 
           {/* Actions */}
-          <div className="space-y-2">
+          <div className="space-y-2 print:hidden">
             <button
               onClick={() => navigate("/budget")}
               className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-sm"

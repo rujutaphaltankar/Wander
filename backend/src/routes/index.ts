@@ -8,6 +8,7 @@ import favoriteRoutes from "./favorite.routes";
 import chatRoutes from "./chat.routes";
 import adminRoutes from "./admin.routes";
 import cityRoutes from "./city.routes";
+import uploadRoutes from "./upload.routes";
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/budgets", budgetRoutes);
 router.use("/favorites", favoriteRoutes);
 router.use("/chat", chatRoutes);
 router.use("/admin", adminRoutes);
+router.use("/upload", uploadRoutes);
 
 export default router;

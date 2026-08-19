@@ -97,25 +97,42 @@ async function callGroq(prompt: string): Promise<string> {
   if (!env.groqApiKey) {
     throw new AppError("AI provider is not configured. Set GROQ_API_KEY in .env.", 503);
   }
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.groqApiKey}`,
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      max_tokens: 2500,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-    }),
-  });
-  if (!response.ok) {
-    const err = await response.text().catch(() => "");
-    throw new AppError(`Groq request failed (${response.status}): ${err}`, 502);
+  const candidateModels = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192",
+  ];
+
+  let lastError = "";
+  for (const model of candidateModels) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+        }),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
+        const content = data.choices[0]?.message?.content ?? "";
+        if (content) return content;
+      } else {
+        lastError = await response.text().catch(() => "");
+      }
+    } catch (e: any) {
+      lastError = e.message;
+    }
   }
-  const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
-  return data.choices[0]?.message?.content ?? "";
+
+  throw new AppError(`Groq request failed: ${lastError}`, 502);
 }
 
 async function callAI(prompt: string): Promise<string> {
@@ -124,24 +141,101 @@ async function callAI(prompt: string): Promise<string> {
   return callAnthropic(prompt);
 }
 
+function cleanAiOutput(text: string): string {
+  let cleaned = stripCodeFences(text);
+  // Remove reasoning tags if any
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // Find opening and closing braces
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  return cleaned;
+}
+
+export function buildFallbackItinerary(req: ItineraryRequest): { day: number; activities: Omit<ItineraryActivityDraft, "day">[] }[] {
+  const days: { day: number; activities: Omit<ItineraryActivityDraft, "day">[] }[] = [];
+  const city = req.cityName;
+  const costPerMeal = Math.max(150, Math.round(req.budgetInr / (req.days * 5)));
+  const costPerAttraction = Math.max(100, Math.round(req.budgetInr / (req.days * 4)));
+
+  for (let i = 1; i <= req.days; i++) {
+    days.push({
+      day: i,
+      activities: [
+        {
+          time: "8:30 AM",
+          title: `Breakfast at ${city} Central Café`,
+          type: "FOOD",
+          durationLabel: "45 min",
+          costInr: costPerMeal,
+          note: "Local breakfast & coffee",
+        },
+        {
+          time: "9:45 AM",
+          title: `Explore ${city} Historic Center & Landmarks`,
+          type: "ATTRACTION",
+          durationLabel: "2.5 hr",
+          costInr: costPerAttraction,
+          note: "Iconic architecture & heritage",
+        },
+        {
+          time: "1:00 PM",
+          title: `Lunch at Traditional ${city} Kitchen`,
+          type: "FOOD",
+          durationLabel: "1 hr",
+          costInr: costPerMeal * 1.2,
+          note: req.foodPref ? `${req.foodPref} specialty` : "Authentic regional lunch",
+        },
+        {
+          time: "2:30 PM",
+          title: `${city} City Museum & Cultural Gallery`,
+          type: "ATTRACTION",
+          durationLabel: "2 hr",
+          costInr: costPerAttraction,
+          note: "Art and history exhibits",
+        },
+        {
+          time: "5:00 PM",
+          title: `${city} Promenade & Sunset Viewpoint`,
+          type: "ACTIVITY",
+          durationLabel: "1.5 hr",
+          costInr: 0,
+          note: "Scenic evening walking tour",
+        },
+        {
+          time: "7:30 PM",
+          title: `Dinner at ${city} Night Market Eatery`,
+          type: "FOOD",
+          durationLabel: "1.5 hr",
+          costInr: costPerMeal * 1.4,
+          note: "Dinner with local street delicacies",
+        },
+      ],
+    });
+  }
+
+  return days;
+}
+
 export async function generateItinerary(
   req: ItineraryRequest
 ): Promise<{ day: number; activities: Omit<ItineraryActivityDraft, "day">[] }[]> {
-  const prompt = buildPrompt(req);
-  const raw = await callAI(prompt);
-
-  let parsed: { days: { day: number; activities: Omit<ItineraryActivityDraft, "day">[] }[] };
   try {
-    parsed = JSON.parse(stripCodeFences(raw));
-  } catch {
-    throw new AppError("The AI returned an unexpected response. Please try generating again.", 502);
+    const prompt = buildPrompt(req);
+    const raw = await callAI(prompt);
+    const cleaned = cleanAiOutput(raw);
+    const parsed = JSON.parse(cleaned);
+
+    if (parsed.days && Array.isArray(parsed.days) && parsed.days.length > 0) {
+      return parsed.days;
+    }
+  } catch (err) {
+    console.warn("[AI] Itinerary generation via AI failed, using dynamic builder:", err);
   }
 
-  if (!parsed.days || !Array.isArray(parsed.days) || parsed.days.length === 0) {
-    throw new AppError("The AI didn't return a usable itinerary. Please try again.", 502);
-  }
-
-  return parsed.days;
+  return buildFallbackItinerary(req);
 }
 
 export async function chatWithAssistant(message: string, cityName?: string): Promise<string> {
@@ -416,7 +510,7 @@ export function generateMockCityAndPlaces(cityName: string): GeneratedCity {
 }
 
 export async function generateCityAndPlaces(cityName: string): Promise<GeneratedCity> {
-  if (!env.anthropicApiKey && !env.openaiApiKey) {
+  if (!env.anthropicApiKey && !env.openaiApiKey && !env.groqApiKey) {
     console.log(`[AI] API keys not set, returning mock data for ${cityName}`);
     return generateMockCityAndPlaces(cityName);
   }

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User, Bookmark, X, LogOut, Sparkles, MapPin, CalendarDays,
-  Users, Wallet, ArrowRight, Trash2, Globe
+  Users, Wallet, ArrowRight, Trash2, Globe, Camera, Loader2, Check, Edit2
 } from "lucide-react";
 import { TopBar } from "../components/TopBar";
 import { api } from "../api/client";
@@ -20,11 +20,19 @@ interface TripSummary {
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, updateUser } = useAuthStore();
   const [favorites, setFavorites] = useState<Array<{ placeId: string; place: { name: string; type: string } }>>([]);
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [tripsLoading, setTripsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"trips" | "saved">("trips");
+
+  // Profile edit states
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.name || "");
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [msg, setMsg] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.get("/favorites").then((res) => setFavorites(res.data.favorites)).catch(() => {});
@@ -33,6 +41,54 @@ export default function Profile() {
       .catch(() => {})
       .finally(() => setTripsLoading(false));
   }, []);
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    setMsg("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const upRes = await api.post("/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const avatarUrl = upRes.data.url;
+      const userRes = await api.patch("/users/me", { avatarUrl });
+
+      updateUser({ avatarUrl });
+      setMsg("Profile picture updated!");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err: any) {
+      setMsg(err.response?.data?.message || "Failed to upload profile picture.");
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleSaveName() {
+    if (!nameInput.trim() || nameInput.trim() === user?.name) {
+      setEditingName(false);
+      return;
+    }
+    setUpdatingProfile(true);
+    setMsg("");
+    try {
+      await api.patch("/users/me", { name: nameInput.trim() });
+      updateUser({ name: nameInput.trim() });
+      setEditingName(false);
+      setMsg("Name updated!");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err: any) {
+      setMsg(err.response?.data?.message || "Failed to update name.");
+    } finally {
+      setUpdatingProfile(false);
+    }
+  }
 
   async function removeFavorite(placeId: string) {
     await api.delete(`/favorites/${placeId}`);
@@ -57,12 +113,84 @@ export default function Profile() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
         {/* Left: Profile card */}
         <div className="space-y-5">
-          <div className="card rounded-3xl p-6 flex flex-col items-center text-center transition-colors">
-            <div className="rounded-full flex items-center justify-center shrink-0 w-20 h-20 bg-gradient-to-br from-green-soft to-blue-soft text-green mb-4 text-2xl font-bold font-display">
-              {user?.name ? user.name.slice(0, 2).toUpperCase() : "TR"}
+          <div className="card rounded-3xl p-6 flex flex-col items-center text-center transition-colors relative">
+            {/* Avatar with upload button */}
+            <div className="relative mb-4 group">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name}
+                  className="w-24 h-24 rounded-full object-cover border-2 border-green shadow-md"
+                />
+              ) : (
+                <div className="rounded-full flex items-center justify-center shrink-0 w-24 h-24 bg-gradient-to-br from-green-soft to-blue-soft text-green text-3xl font-bold font-display shadow-md">
+                  {user?.name ? user.name.slice(0, 2).toUpperCase() : "TR"}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="absolute bottom-0 right-0 p-2 rounded-full bg-green text-ink hover:bg-green-soft shadow-md transition-transform hover:scale-110"
+                title="Upload profile picture"
+              >
+                {uploadingAvatar ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handleAvatarUpload}
+                className="hidden"
+              />
             </div>
-            <h2 className="text-lg font-bold text-ink dark:text-[#EAF3EF]">{user?.name}</h2>
+
+            {/* Name / Inline Edit */}
+            {editingName ? (
+              <div className="flex items-center gap-1.5 mb-1 w-full justify-center">
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="card text-sm font-bold px-2 py-1 rounded-lg text-center max-w-[180px] bg-white dark:bg-[#122029]"
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={updatingProfile}
+                  className="p-1.5 rounded-lg bg-green text-ink hover:bg-green-soft"
+                >
+                  <Check size={14} />
+                </button>
+                <button
+                  onClick={() => { setEditingName(false); setNameInput(user?.name || ""); }}
+                  className="p-1.5 rounded-lg bg-cloud dark:bg-[#22333A] text-muted hover:text-ink"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 mb-1">
+                <h2 className="text-lg font-bold text-ink dark:text-[#EAF3EF]">{user?.name}</h2>
+                <button
+                  onClick={() => { setEditingName(true); setNameInput(user?.name || ""); }}
+                  className="text-muted hover:text-green p-0.5 rounded transition-colors"
+                  title="Edit name"
+                >
+                  <Edit2 size={13} />
+                </button>
+              </div>
+            )}
+
             <p className="text-sm text-muted mb-1">{user?.email}</p>
+
+            {msg && (
+              <div className={`text-xs mt-2 font-medium ${msg.includes("Failed") ? "text-red-500" : "text-green"}`}>
+                {msg}
+              </div>
+            )}
+
             <div className="flex items-center gap-4 mt-3 mb-6 text-xs text-muted">
               <div className="flex items-center gap-1">
                 <Sparkles size={12} className="text-green" />
@@ -73,6 +201,7 @@ export default function Profile() {
                 <span>{favorites.length} saved</span>
               </div>
             </div>
+
             <button
               onClick={handleLogout}
               className="card w-full rounded-2xl py-3 flex items-center justify-center gap-2 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors border border-line dark:border-[#22333A]"
@@ -137,7 +266,9 @@ export default function Profile() {
           {activeTab === "trips" && (
             <div className="space-y-3">
               {tripsLoading && (
-                <div className="py-8 text-sm text-muted text-center">Loading trips…</div>
+                <div className="py-8 text-sm text-muted text-center flex items-center justify-center gap-2">
+                  <Loader2 size={16} className="animate-spin text-green" /> Loading trips…
+                </div>
               )}
               {!tripsLoading && trips.length === 0 && (
                 <div className="card rounded-3xl p-10 text-center">

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { env } from "../config/env";
 
@@ -16,7 +17,10 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export function signRefreshToken(payload: { sub: string }): string {
-  const options: SignOptions = { expiresIn: env.refreshExpiresIn as SignOptions["expiresIn"] };
+  const options: SignOptions = {
+    expiresIn: env.refreshExpiresIn as SignOptions["expiresIn"],
+    jwtid: crypto.randomUUID(),
+  };
   return jwt.sign(payload, env.refreshSecret, options);
 }
 

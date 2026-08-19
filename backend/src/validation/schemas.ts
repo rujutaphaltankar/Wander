@@ -24,7 +24,7 @@ export const updateProfileSchema = z.object({
 
 export const createReviewSchema = z.object({
   body: z.object({
-    placeId: z.string().uuid(),
+    placeId: z.string().optional(),
     rating: z.number().int().min(1).max(5),
     comment: z.string().max(1000).optional(),
   }),

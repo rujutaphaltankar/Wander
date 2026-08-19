@@ -65,9 +65,18 @@ export async function deletePlace(req: Request, res: Response) {
 }
 
 export async function createReview(req: Request & { user?: { id: string } }, res: Response) {
-  const { placeId, rating, comment } = req.body;
+  const placeId = (req.params.id || req.body.placeId) as string;
+  const { rating, comment } = req.body;
+
+  if (!placeId) {
+    throw new NotFoundError("Place ID is required.");
+  }
+
   const review = await prisma.review.create({
-    data: { userId: req.user!.id, placeId, rating, comment },
+    data: { userId: req.user!.id, placeId, rating: Number(rating), comment },
+    include: {
+      user: { select: { id: true, name: true, avatarUrl: true } },
+    },
   });
 
   const agg = await prisma.review.aggregate({
@@ -75,10 +84,11 @@ export async function createReview(req: Request & { user?: { id: string } }, res
     _avg: { rating: true },
     _count: true,
   });
-  await prisma.place.update({
+
+  const place = await prisma.place.update({
     where: { id: placeId },
     data: { rating: agg._avg.rating ?? 0, ratingCount: agg._count },
   });
 
-  res.status(201).json({ success: true, review });
+  res.status(201).json({ success: true, review, place });
 }

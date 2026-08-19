@@ -16,6 +16,9 @@ export interface Place {
   isVegFriendly: boolean;
   imageUrl?: string | null;
   tag?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface ItineraryActivity {

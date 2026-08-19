@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { PlaceCard } from "../components/PlaceCard";
+import { MapView, MapPlaceItem } from "../components/MapView";
 import { api } from "../api/client";
 import { Place } from "../types";
-import { Cloud, Wind, MapPin, Sparkles, UtensilsCrossed, Landmark, Star, Loader2 } from "lucide-react";
+import {
+  Cloud, Wind, MapPin, Sparkles, UtensilsCrossed, Landmark, Star,
+  Loader2, LayoutGrid, Map as MapIcon, Filter, X
+} from "lucide-react";
 
 const ALL_CATEGORIES = [
   "All",
@@ -19,6 +23,7 @@ const ALL_CATEGORIES = [
 const BUDGETS = [200, 500, 1000, 2500, 5000];
 
 type TabType = "food" | "sights" | "activities";
+type ViewMode = "grid" | "map";
 
 const WMO_CODES: Record<number, string> = {
   0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
@@ -31,6 +36,7 @@ const WMO_CODES: Record<number, string> = {
 
 export default function Explore() {
   const [activeTab, setActiveTab] = useState<TabType>("food");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [foodPlaces, setFoodPlaces] = useState<Place[]>([]);
   const [attractionPlaces, setAttractionPlaces] = useState<Place[]>([]);
   const [activityPlaces, setActivityPlaces] = useState<Place[]>([]);
@@ -45,7 +51,7 @@ export default function Explore() {
   const [loading, setLoading] = useState(true);
   const [cityData, setCityData] = useState<any>(null);
   const [weatherData, setWeatherData] = useState<any>(null);
-  const [generating, setGenerating] = useState(false);
+  const [selectedMapPlace, setSelectedMapPlace] = useState<Place | null>(null);
 
   useEffect(() => {
     const urlCity = searchParams.get("city");
@@ -130,6 +136,21 @@ export default function Explore() {
 
   const totalCount = foodPlaces.length + attractionPlaces.length + activityPlaces.length;
 
+  const mapPlaces: MapPlaceItem[] = currentPlaces
+    .filter((p) => typeof p.latitude === "number" && typeof p.longitude === "number")
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      category: p.category,
+      description: p.description ?? undefined,
+      latitude: p.latitude!,
+      longitude: p.longitude!,
+      costInr: p.avgCostInr || p.entryFeeInr || undefined,
+      rating: p.rating,
+      visitDuration: p.visitDuration ?? undefined,
+    }));
+
   return (
     <div className="pb-8">
       <TopBar
@@ -140,15 +161,13 @@ export default function Explore() {
       {/* City Dashboard */}
       {cityData && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6 mt-2 animate-fadeIn">
-          {/* Map */}
-          <div className="md:col-span-2 card p-0 overflow-hidden relative h-64 rounded-3xl border border-line dark:border-[#22333A]">
-            <iframe
-              title="City Map"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              src={`https://maps.google.com/maps?q=${encodeURIComponent(cityData.name + ", " + cityData.country)}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
-              allowFullScreen
+          {/* Interactive Map View */}
+          <div className="md:col-span-2 relative h-64">
+            <MapView
+              places={mapPlaces}
+              center={[cityData.latitude, cityData.longitude]}
+              zoom={13}
+              heightClass="h-64"
             />
           </div>
 
@@ -251,23 +270,51 @@ export default function Explore() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-cloud dark:bg-[#122029] p-1 rounded-2xl border border-line dark:border-[#22333A]">
-        {tabConfig.map(({ key, label, icon: Icon, count }) => (
+      {/* Tabs & View Mode Switcher */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6">
+        <div className="flex flex-1 gap-1 bg-cloud dark:bg-[#122029] p-1 rounded-2xl border border-line dark:border-[#22333A]">
+          {tabConfig.map(({ key, label, icon: Icon, count }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-all ${
+                activeTab === key
+                  ? "bg-white dark:bg-[#0B171E] text-green shadow-sm"
+                  : "text-muted hover:text-ink dark:hover:text-[#EAF3EF]"
+              }`}
+            >
+              <Icon size={14} />
+              <span className="hidden sm:inline">{label}</span>
+              <span className="text-xs font-mono bg-line dark:bg-[#22333A] px-1.5 py-0.5 rounded-full">{count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Grid vs Map Toggle */}
+        <div className="flex bg-cloud dark:bg-[#122029] p-1 rounded-2xl border border-line dark:border-[#22333A] self-end sm:self-auto">
           <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-all ${
-              activeTab === key
+            onClick={() => setViewMode("grid")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+              viewMode === "grid"
                 ? "bg-white dark:bg-[#0B171E] text-green shadow-sm"
                 : "text-muted hover:text-ink dark:hover:text-[#EAF3EF]"
             }`}
           >
-            <Icon size={14} />
-            <span className="hidden sm:inline">{label}</span>
-            <span className="text-xs font-mono bg-line dark:bg-[#22333A] px-1.5 py-0.5 rounded-full">{count}</span>
+            <LayoutGrid size={14} />
+            <span>Grid</span>
           </button>
-        ))}
+          <button
+            onClick={() => setViewMode("map")}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+              viewMode === "map"
+                ? "bg-white dark:bg-[#0B171E] text-green shadow-sm"
+                : "text-muted hover:text-ink dark:hover:text-[#EAF3EF]"
+            }`}
+          >
+            <MapIcon size={14} />
+            <span>Interactive Map</span>
+          </button>
+        </div>
       </div>
 
       {/* Results */}
@@ -280,6 +327,35 @@ export default function Explore() {
           {city && (
             <div className="text-xs text-muted mt-1 opacity-70">
               First visit to a new city generates AI-powered places — may take 10-15s
+            </div>
+          )}
+        </div>
+      ) : viewMode === "map" ? (
+        <div className="space-y-4">
+          <MapView
+            places={mapPlaces}
+            center={cityData ? [cityData.latitude, cityData.longitude] : undefined}
+            zoom={12}
+            heightClass="h-[520px]"
+            onSelectPlace={(item) => {
+              const matched = currentPlaces.find((p) => p.id === item.id);
+              if (matched) setSelectedMapPlace(matched);
+            }}
+          />
+
+          {selectedMapPlace && (
+            <div className="p-3 bg-white dark:bg-[#0E1A22] rounded-2xl border border-line dark:border-[#22333A] shadow-lg max-w-md mx-auto">
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-bold text-green">Selected Map Pin</span>
+                <button onClick={() => setSelectedMapPlace(null)} className="text-muted hover:text-ink">
+                  <X size={14} />
+                </button>
+              </div>
+              <PlaceCard
+                place={selectedMapPlace}
+                isFavorite={favorites.includes(selectedMapPlace.id)}
+                onToggleFavorite={toggleFavorite}
+              />
             </div>
           )}
         </div>
